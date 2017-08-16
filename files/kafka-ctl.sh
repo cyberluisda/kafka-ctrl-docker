@@ -20,7 +20,7 @@ kafka-ctl COMMAND [options]
       -n: count the number of brokers instead of list it
   list-topics : list all topics
   wait-for-topics: Wait for topics exist, or timeout.
-    options: [ --time-out SECONDS] NAME0 ... NAMEn
+    options: [ --timeout SECONDS] NAME0 ... NAMEn
       SECONDS: Number of seconds to wait after exist with tiemout error
       NAMEx: Topics that should exists (all) until exit.
   delete-topic : delete a on more topic
