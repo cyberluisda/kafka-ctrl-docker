@@ -1,4 +1,4 @@
-FROM openshine/kafka:0.10.2.0
+FROM openshine/kafka:0.11.0.0
 
 MAINTAINER Luis David Barrios Alfonso (cyberluisda@gmail.com)
 
