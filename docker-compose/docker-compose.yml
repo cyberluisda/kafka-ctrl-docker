@@ -9,7 +9,7 @@ services:
       kafka:
         condition: service_started
   kafka:
-    image: openshine/kafka:0.10.2.0
+    image: openshine/kafka:0.11.0.0
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ADVERTISED_HOST_NAME: kafka
