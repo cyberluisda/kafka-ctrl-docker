@@ -344,6 +344,8 @@ repartition(){
     brokerList=$(list_brokers | tr -d '][')
   fi
 
+  echo "Destination brokers are $brokerList"
+
   # temporal dir
   local tempDir=$(mktemp -d)
   cd "$tempDir"
