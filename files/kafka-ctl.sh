@@ -331,6 +331,11 @@ repartition(){
         verify="yes"
         shift 1
         ;;
+      *)
+        echo "ERROR unknown option $1 on repartition command"
+        usage
+        exit 1
+        ;;
     esac
   done
 
