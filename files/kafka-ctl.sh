@@ -70,6 +70,17 @@ kafka-ctl COMMAND [options]
       --file|-f filepath file to use as data input, if it is not defined data will be read from stdin
       --property PROPx=VALUEx : set property PROPx with value VALUEx in producer
 
+  repartition : reallocate partitions into diferents nodes for a topic
+    options : NAME [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run]
+      NAME : name of the topic to reallocate partitions
+      --dest-broker-list BROKER_IDx. List of brokers to use as destination. By default
+        all brokers in cluster (see list-brokers command) are set.
+        Note that list of broker ids must be only one string without spaces
+        separates by comma. (CSV)
+      --dry-run. If present only information about planning is showed. Any action is
+        persisted.
+      --verify. If present verify procedure will be launched.
+
   ENVIRONMENT CONFIGURATION.
     There are some configuration and behaviours that can be set using next Environment
     Variables:
@@ -282,6 +293,148 @@ produce() {
   cat $inputFile | kafka-console-producer.sh $@ --topic "$name" --broker-list "${KAFKA_BROKER_LIST}"
 }
 
+repartition(){
+
+  # topic name
+  local topicName="$1"
+  if [ -z "$topicName" ]
+  then
+    echo "repartition with empty topic"
+    usage
+    exit 1
+  fi
+  shift
+
+
+  # broker_ids, dry-run and verify
+  local brokerList=""
+  local dryRun="no"
+  local verify="no"
+  while [ -n "$1" ]
+  do
+    case "$1" in
+      --dest-broker-list|-b)
+          if [ -z "$2" ]
+          then
+            echo "repartition with --dest-broker-list|-b option without value"
+            usage
+            exit 1
+          fi
+          brokerList="$2"
+          shift 2
+        ;;
+      --dry-run)
+        dryRun="yes"
+        shift 1
+        ;;
+      --verify)
+        verify="yes"
+        shift 1
+        ;;
+      *)
+        echo "ERROR unknown option $1 on repartition command"
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+  if [ -z "$brokerList" ]
+  then
+    brokerList=$(list_brokers | tr -d '][')
+  fi
+
+  echo "Destination brokers are $brokerList"
+
+  # temporal dir
+  local tempDir=$(mktemp -d)
+  cd "$tempDir"
+
+  #Build json file with topic name configured
+  cat > topics-to-move.json <<EOF
+{"topics": [{"topic": "$topicName"}],"version":1}
+EOF
+
+  # Generate repartiton plan
+  kafka-reassign-partitions.sh \
+    --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+    --topics-to-move-json-file topics-to-move.json \
+    --broker-list "$brokerList" \
+    --generate \
+  > repartition-plan.stdout
+
+  # Check pre-requisites format to split file
+  local lines="$(cat repartition-plan.stdout | wc -l)"
+  if [ "$lines" != "5" ]
+  then
+    echo "ERROR: expected 5 lines on repartition plan but get $lines":
+    echo "----------"
+    cat repartition-plan.stdout
+    echo "----------"
+    exit 1
+  fi
+
+  # Extracting current and propossed partion state
+  local repartictionCurrentJson=$(cat repartition-plan.stdout | egrep -e "Current partition replica assignment" -A1 | tail -1)
+  local repartictionProposedJson=$(cat repartition-plan.stdout | egrep -e "Proposed partition reassignment configuration" -A1 | tail -1)
+
+  if [ -z "$repartictionCurrentJson" -o -z "$repartictionProposedJson" ]
+  then
+    echo "ERROR: When extract information from repartition-plan.stdout:
+expected format:
+Current partition replica assignment
+{ .... JSON_DATA ...}
+Proposed partition reassignment configuration
+{ .... JSON_DATA ...}"
+
+    echo "Current value"
+    echo "----------"
+    cat repartition-plan.stdout
+    echo "----------"
+    exit 1
+  fi
+
+  echo "$repartictionCurrentJson" | jq -S . - > repartiton-current.json
+  echo "$repartictionProposedJson" | jq -S . - > repartiton-proposed.json
+
+  if diff --unified repartiton-current.json repartiton-proposed.json > /dev/null
+  then
+    echo "Current partition replica is the same like proposed. NOTHING to do"
+    exit 0
+  fi
+  echo "Plan of working"
+  echo ">>From"
+  echo "$repartictionCurrentJson" | jq
+  echo ">>To"
+  echo "$repartictionProposedJson" | jq
+
+  if [ "yes" == "$dryRun" ]
+  then
+    echo "Dry run mode. End"
+    exit 0
+  fi
+
+  # Executing plan
+  echo "Executing plan"
+  kafka-reassign-partitions.sh \
+    --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+    --reassignment-json-file repartiton-proposed.json \
+    --execute \
+
+  # Verify
+  if [ "yes" == "$verify" ]
+  then
+    echo "Verification"
+    kafka-reassign-partitions.sh \
+      --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+      --reassignment-json-file repartiton-proposed.json \
+      --verify
+  fi
+
+  cd - > /dev/null
+  rm -fr "$tempDir"
+}
+
 wait_for_service_up(){
     if [ -n "$WAIT_FOR_SERVICE_UP" ]; then
       local services=""
@@ -327,6 +480,10 @@ case $1 in
   produce)
     shift
     produce $@
+    ;;
+  repartition)
+    shift
+    repartition $@
     ;;
   *)
     usage
