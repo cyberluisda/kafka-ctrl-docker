@@ -70,6 +70,17 @@ kafka-ctl COMMAND [options]
       --file|-f filepath file to use as data input, if it is not defined data will be read from stdin
       --property PROPx=VALUEx : set property PROPx with value VALUEx in producer
 
+  repartition : reallocate partitions into diferents nodes for a topic
+    options : NAME [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run]
+      NAME : name of the topic to reallocate partitions
+      --dest-broker-list BROKER_IDx. List of brokers to use as destination. By default
+        all brokers in cluster (see list-brokers command) are set.
+        Note that list of broker ids must be only one string without spaces
+        separates by comma. (CSV)
+      --dry-run. If present only information about planning is showed. Any action is
+        persisted.
+      --verify. If present verify procedure will be launched.
+
   ENVIRONMENT CONFIGURATION.
     There are some configuration and behaviours that can be set using next Environment
     Variables:
