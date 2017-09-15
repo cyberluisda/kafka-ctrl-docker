@@ -71,8 +71,10 @@ kafka-ctl COMMAND [options]
       --property PROPx=VALUEx : set property PROPx with value VALUEx in producer
 
   repartition : reallocate partitions into diferents nodes for a topic
-    options : NAME [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run]
-      NAME : name of the topic to reallocate partitions
+    options : --all-topics|(NAME0 NAME1 ... NAMEn [--]) [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run] [--format-plan]
+      --all-topics: Look-up and apply to all topics in cluster. BE CAREFULLY
+      NAMEx : name of the topic to reallocate partitions
+      -- Mandatory if any of the next options is defined when topis are defined by name
       --dest-broker-list BROKER_IDx. List of brokers to use as destination. By default
         all brokers in cluster (see list-brokers command) are set.
         Note that list of broker ids must be only one string without spaces
@@ -302,18 +304,36 @@ produce() {
 
 repartition(){
 
-  # topic name
-  local topicName="$1"
-  if [ -z "$topicName" ]
+  # topics name
+  local topics=""
+  if [ "--all-topics" == "$1" ]
   then
-    echo "repartition with empty topic"
+    # Lookup for al topics
+    topics="$(list_topics | tr '\n' ' ')"
+    shift 1
+  else
+    # GEt topics from parameters
+    while [ -n "$1" ]
+    do
+      # pass "--"
+      if [ "$1" == "--" ]
+      then
+        shift
+        break
+      fi
+      topics="$topics $1"
+      shift 1
+    done
+  fi
+
+  if [ -z "$topics" ]
+  then
+    echo "repartition without any topic"
     usage
     exit 1
   fi
-  shift
 
-
-  # broker_ids, dry-run and verify
+  # broker_ids, dry-run, verify and formatPlan
   local brokerList=""
   local dryRun="no"
   local verify="no"
@@ -364,10 +384,8 @@ repartition(){
   local tempDir=$(mktemp -d)
   cd "$tempDir"
 
-  #Build json file with topic name configured
-  cat > topics-to-move.json <<EOF
-{"topics": [{"topic": "$topicName"}],"version":1}
-EOF
+  #Build json file with topics name configured
+  generate_topics_json $topics > topics-to-move.json
 
   # Generate repartiton plan
   kafka-reassign-partitions.sh \
@@ -459,6 +477,32 @@ Proposed partition reassignment configuration
 
   cd - > /dev/null
   rm -fr "$tempDir"
+}
+
+# $1 Array with topics
+generate_topics_json(){
+  local topics=()
+  while [ -n "$1" ]
+  do
+    topics=(${topics[@]} $1)
+    shift 1
+  done
+
+  #Header of file
+  echo -n '{"version":1, "topics": ['
+  # Each topic
+  for i in ${!topics[*]}
+  do
+    # For first item we does not prefix with json array separator (,)
+    if [ "$i" -eq "0" ]
+    then
+      printf "{\"topic\": \"%s\"}" ${topics[$i]}
+    else
+      printf ", {\"topic\": \"%s\"}" ${topics[$i]}
+    fi
+  done
+  # End of file
+  echo ']}'
 }
 
 verify_repartition(){
