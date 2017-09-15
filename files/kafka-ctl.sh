@@ -71,8 +71,10 @@ kafka-ctl COMMAND [options]
       --property PROPx=VALUEx : set property PROPx with value VALUEx in producer
 
   repartition : reallocate partitions into diferents nodes for a topic
-    options : NAME [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run]
-      NAME : name of the topic to reallocate partitions
+    options : --all-topics|(NAME0 NAME1 ... NAMEn [--]) [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run] [--format-plan]
+      --all-topics: Look-up and apply to all topics in cluster. BE CAREFULLY
+      NAMEx : name of the topic to reallocate partitions
+      -- Mandatory if any of the next options is defined when topis are defined by name
       --dest-broker-list BROKER_IDx. List of brokers to use as destination. By default
         all brokers in cluster (see list-brokers command) are set.
         Note that list of broker ids must be only one string without spaces
@@ -80,6 +82,13 @@ kafka-ctl COMMAND [options]
       --dry-run. If present only information about planning is showed. Any action is
         persisted.
       --verify. If present verify procedure will be launched.
+      --format-plan. If present and plan must be applied json data will formatted
+        with "jd" command.
+
+  verify-repartition : Verify a repartition plan previously executed.
+    options: JSON_WITH_PLAN
+      JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
+        format
 
   ENVIRONMENT CONFIGURATION.
     There are some configuration and behaviours that can be set using next Environment
@@ -295,21 +304,40 @@ produce() {
 
 repartition(){
 
-  # topic name
-  local topicName="$1"
-  if [ -z "$topicName" ]
+  # topics name
+  local topics=""
+  if [ "--all-topics" == "$1" ]
   then
-    echo "repartition with empty topic"
+    # Lookup for al topics
+    topics="$(list_topics | tr '\n' ' ')"
+    shift 1
+  else
+    # GEt topics from parameters
+    while [ -n "$1" ]
+    do
+      # pass "--"
+      if [ "$1" == "--" ]
+      then
+        shift
+        break
+      fi
+      topics="$topics $1"
+      shift 1
+    done
+  fi
+
+  if [ -z "$topics" ]
+  then
+    echo "repartition without any topic"
     usage
     exit 1
   fi
-  shift
 
-
-  # broker_ids, dry-run and verify
+  # broker_ids, dry-run, verify and formatPlan
   local brokerList=""
   local dryRun="no"
   local verify="no"
+  local formatPlan="no"
   while [ -n "$1" ]
   do
     case "$1" in
@@ -331,6 +359,10 @@ repartition(){
         verify="yes"
         shift 1
         ;;
+      --format-plan)
+        formatPlan="yes"
+        shift 1
+        ;;
       *)
         echo "ERROR unknown option $1 on repartition command"
         usage
@@ -344,16 +376,16 @@ repartition(){
     brokerList=$(list_brokers | tr -d '][')
   fi
 
-  echo "Destination brokers are $brokerList"
+  echo "========="
+  echo "Topics \"$topics\" will be 'repartitioned' to \"$brokerList\" brokers"
+  echo "========="
 
   # temporal dir
   local tempDir=$(mktemp -d)
   cd "$tempDir"
 
-  #Build json file with topic name configured
-  cat > topics-to-move.json <<EOF
-{"topics": [{"topic": "$topicName"}],"version":1}
-EOF
+  #Build json file with topics name configured
+  generate_topics_json $topics > topics-to-move.json
 
   # Generate repartiton plan
   kafka-reassign-partitions.sh \
@@ -404,9 +436,19 @@ Proposed partition reassignment configuration
   fi
   echo "Plan of working"
   echo ">>From"
-  echo "$repartictionCurrentJson" | jq
+  if [ "yes" == "$formatPlan" ]
+  then
+    echo "$repartictionCurrentJson" | jq
+  else
+    echo "$repartictionCurrentJson"
+  fi
   echo ">>To"
-  echo "$repartictionProposedJson" | jq
+  if [ "yes" == "$formatPlan" ]
+  then
+    echo "$repartictionProposedJson" | jq
+  else
+    echo "$repartictionCurrentJson"
+  fi
 
   if [ "yes" == "$dryRun" ]
   then
@@ -425,14 +467,62 @@ Proposed partition reassignment configuration
   if [ "yes" == "$verify" ]
   then
     echo "Verification"
-    kafka-reassign-partitions.sh \
-      --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
-      --reassignment-json-file repartiton-proposed.json \
-      --verify
+    verify_repartition "$(cat repartiton-proposed.json)"
   fi
+
+  echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
+  echo "-----"
+  echo "$repartictionCurrentJson"
+  echo "-----"
 
   cd - > /dev/null
   rm -fr "$tempDir"
+}
+
+# $1 Array with topics
+generate_topics_json(){
+  local topics=()
+  while [ -n "$1" ]
+  do
+    topics=(${topics[@]} $1)
+    shift 1
+  done
+
+  #Header of file
+  echo -n '{"version":1, "topics": ['
+  # Each topic
+  for i in ${!topics[*]}
+  do
+    # For first item we does not prefix with json array separator (,)
+    if [ "$i" -eq "0" ]
+    then
+      printf "{\"topic\": \"%s\"}" ${topics[$i]}
+    else
+      printf ", {\"topic\": \"%s\"}" ${topics[$i]}
+    fi
+  done
+  # End of file
+  echo ']}'
+}
+
+verify_repartition(){
+
+  local repartitionPlanJson="$1"
+  if [ -z "$repartitionPlanJson" ]
+  then
+    echo "ERROF: verify-repartition without plan"
+    usage
+    exit 1
+  fi
+
+  tempDir="$(mktemp -d)"
+  echo -n "$repartitionPlanJson" > "$tempDir/repartiton-proposed.json"
+  kafka-reassign-partitions.sh \
+    --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+    --reassignment-json-file "$tempDir/repartiton-proposed.json" \
+    --verify
+
+  rm -fr $tempDir
 }
 
 wait_for_service_up(){
@@ -484,6 +574,10 @@ case $1 in
   repartition)
     shift
     repartition $@
+    ;;
+  verify-repartition)
+    shift
+    verify_repartition $@
     ;;
   *)
     usage
