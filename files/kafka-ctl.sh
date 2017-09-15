@@ -447,7 +447,7 @@ Proposed partition reassignment configuration
   then
     echo "$repartictionProposedJson" | jq
   else
-    echo "$repartictionCurrentJson"
+    echo "$repartictionProposedJson"
   fi
 
   if [ "yes" == "$dryRun" ]
@@ -472,7 +472,7 @@ Proposed partition reassignment configuration
 
   echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
   echo "-----"
-  echo "$repartictionCurrentJson"
+  echo "$repartictionProposedJson"
   echo "-----"
 
   cd - > /dev/null
