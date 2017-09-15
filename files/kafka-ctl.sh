@@ -447,10 +447,7 @@ Proposed partition reassignment configuration
   if [ "yes" == "$verify" ]
   then
     echo "Verification"
-    kafka-reassign-partitions.sh \
-      --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
-      --reassignment-json-file repartiton-proposed.json \
-      --verify
+    verify_repartition "$(cat repartiton-proposed.json)"
   fi
 
   echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
