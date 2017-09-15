@@ -373,7 +373,7 @@ repartition(){
 
   if [ -z "$brokerList" ]
   then
-    brokerList=$(list_brokers | tr -d '][')
+    brokerList=$(list_brokers | tr -d '][ ')
   fi
 
   echo "========="
