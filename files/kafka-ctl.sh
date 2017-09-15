@@ -328,7 +328,7 @@ repartition(){
 
   if [ -z "$topics" ]
   then
-    echo "repartition without any topic"
+    echo "ERROR: repartition without any topic"
     usage
     exit 1
   fi
@@ -376,9 +376,7 @@ repartition(){
     brokerList=$(list_brokers | tr -d '][ ')
   fi
 
-  echo "========="
-  echo "Topics \"$topics\" will be 'repartitioned' to \"$brokerList\" brokers"
-  echo "========="
+  echo "### Topics \"$topics\" will be 'repartitioned' to \"$brokerList\" brokers"
 
   # temporal dir
   local tempDir=$(mktemp -d)
@@ -434,10 +432,10 @@ Proposed partition reassignment configuration
 
   if diff --unified repartiton-current-format.json repartiton-proposed-format.json > /dev/null
   then
-    echo "Current partition replica is the same like proposed. NOTHING to do"
+    echo "INFO: Current partition replica is the same like proposed. NOTHING to do"
     exit 0
   fi
-  echo "Plan of working"
+  echo "### Working plan"
   echo ">>From"
   if [ "yes" == "$formatPlan" ]
   then
@@ -455,12 +453,12 @@ Proposed partition reassignment configuration
 
   if [ "yes" == "$dryRun" ]
   then
-    echo "Dry run mode. End"
+    echo "### Dry run mode. End"
     exit 0
   fi
 
   # Executing plan
-  echo "Executing plan"
+  echo "### Executing plan"
   kafka-reassign-partitions.sh \
     --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
     --reassignment-json-file repartiton-proposed.json \
@@ -469,7 +467,7 @@ Proposed partition reassignment configuration
   # Verify
   if [ "yes" == "$verify" ]
   then
-    echo "Verification"
+    echo "### Verification"
     verify_repartition "$(cat repartiton-proposed.json)"
   fi
 
