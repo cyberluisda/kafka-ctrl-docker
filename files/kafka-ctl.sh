@@ -80,6 +80,9 @@ kafka-ctl COMMAND [options]
       --dry-run. If present only information about planning is showed. Any action is
         persisted.
       --verify. If present verify procedure will be launched.
+      --format-plan. If present and plan must be applied json data will formatted
+        with "jd" command.
+
 
   ENVIRONMENT CONFIGURATION.
     There are some configuration and behaviours that can be set using next Environment
@@ -310,6 +313,7 @@ repartition(){
   local brokerList=""
   local dryRun="no"
   local verify="no"
+  local formatPlan="no"
   while [ -n "$1" ]
   do
     case "$1" in
@@ -329,6 +333,10 @@ repartition(){
         ;;
       --verify)
         verify="yes"
+        shift 1
+        ;;
+      --format-plan)
+        formatPlan="yes"
         shift 1
         ;;
       *)
@@ -404,9 +412,19 @@ Proposed partition reassignment configuration
   fi
   echo "Plan of working"
   echo ">>From"
-  echo "$repartictionCurrentJson" | jq
+  if [ "yes" == "$formatPlan" ]
+  then
+    echo "$repartictionCurrentJson" | jq
+  else
+    echo "$repartictionCurrentJson"
+  fi
   echo ">>To"
-  echo "$repartictionProposedJson" | jq
+  if [ "yes" == "$formatPlan" ]
+  then
+    echo "$repartictionProposedJson" | jq
+  else
+    echo "$repartictionCurrentJson"
+  fi
 
   if [ "yes" == "$dryRun" ]
   then
