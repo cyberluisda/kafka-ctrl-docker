@@ -426,10 +426,13 @@ Proposed partition reassignment configuration
     exit 1
   fi
 
-  echo "$repartictionCurrentJson" | jq -S . - > repartiton-current.json
-  echo "$repartictionProposedJson" | jq -S . - > repartiton-proposed.json
+  echo "$repartictionCurrentJson" > repartiton-current.json
+  echo "$repartictionProposedJson" > repartiton-proposed.json
 
-  if diff --unified repartiton-current.json repartiton-proposed.json > /dev/null
+  echo "$repartictionCurrentJson" | jq -S . - > repartiton-current-format.json
+  echo "$repartictionProposedJson" | jq -S . - > repartiton-proposed-format.json
+
+  if diff --unified repartiton-current-format.json repartiton-proposed-format.json > /dev/null
   then
     echo "Current partition replica is the same like proposed. NOTHING to do"
     exit 0
@@ -438,16 +441,16 @@ Proposed partition reassignment configuration
   echo ">>From"
   if [ "yes" == "$formatPlan" ]
   then
-    echo "$repartictionCurrentJson" | jq
+    cat repartiton-current-format.json
   else
-    echo "$repartictionCurrentJson"
+    cat repartiton-current.json
   fi
   echo ">>To"
   if [ "yes" == "$formatPlan" ]
   then
-    echo "$repartictionProposedJson" | jq
+    cat repartiton-proposed-format.json
   else
-    echo "$repartictionProposedJson"
+    cat repartiton-proposed.json
   fi
 
   if [ "yes" == "$dryRun" ]
@@ -472,7 +475,7 @@ Proposed partition reassignment configuration
 
   echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
   echo "-----"
-  echo "$repartictionProposedJson"
+  cat repartiton-proposed.json
   echo "-----"
 
   cd - > /dev/null
