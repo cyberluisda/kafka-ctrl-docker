@@ -356,7 +356,9 @@ repartition(){
     brokerList=$(list_brokers | tr -d '][')
   fi
 
-  echo "Destination brokers are $brokerList"
+  echo "========="
+  echo "Topics \"$topics\" will be 'repartitioned' to \"$brokerList\" brokers"
+  echo "========="
 
   # temporal dir
   local tempDir=$(mktemp -d)
