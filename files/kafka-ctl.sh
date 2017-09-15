@@ -83,6 +83,10 @@ kafka-ctl COMMAND [options]
       --format-plan. If present and plan must be applied json data will formatted
         with "jd" command.
 
+  verify-repartition : Verify a repartition plan previously executed.
+    options: JSON_WITH_PLAN
+      JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
+        format
 
   ENVIRONMENT CONFIGURATION.
     There are some configuration and behaviours that can be set using next Environment
@@ -449,8 +453,33 @@ Proposed partition reassignment configuration
       --verify
   fi
 
+  echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
+  echo "-----"
+  echo "$repartictionCurrentJson"
+  echo "-----"
+
   cd - > /dev/null
   rm -fr "$tempDir"
+}
+
+verify_repartition(){
+
+  local repartitionPlanJson="$1"
+  if [ -z "$repartitionPlanJson" ]
+  then
+    echo "ERROF: verify-repartition without plan"
+    usage
+    exit 1
+  fi
+
+  tempDir="$(mktemp -d)"
+  echo -n "$repartitionPlanJson" > "$tempDir/repartiton-proposed.json"
+  kafka-reassign-partitions.sh \
+    --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+    --reassignment-json-file "$tempDir/repartiton-proposed.json" \
+    --verify
+
+  rm -fr $tempDir
 }
 
 wait_for_service_up(){
@@ -502,6 +531,10 @@ case $1 in
   repartition)
     shift
     repartition $@
+    ;;
+  verify-repartition)
+    shift
+    verify_repartition $@
     ;;
   *)
     usage
