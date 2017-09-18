@@ -467,8 +467,7 @@ Proposed partition reassignment configuration
   # Verify
   if [ "yes" == "$verify" ]
   then
-    echo "### Verification"
-    verify_repartition "$(cat repartiton-proposed.json)"
+    verify_repartition "$repartictionProposedJson" "$tempDir"
   fi
 
   echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
@@ -506,6 +505,11 @@ generate_topics_json(){
   echo ']}'
 }
 
+
+# $1 json string with plan
+# $2 (Optional) temporal path used to save files. If not defined temporal path
+# will be created and removed when finished. If it is provided, path will not be
+# erased at end.
 verify_repartition(){
 
   local repartitionPlanJson="$1"
@@ -516,14 +520,25 @@ verify_repartition(){
     exit 1
   fi
 
-  tempDir="$(mktemp -d)"
-  echo -n "$repartitionPlanJson" > "$tempDir/repartiton-proposed.json"
+  local tempDir="$2"
+  local deleteTempDir="no"
+  if [ -z "$tempDir" ]
+  then
+    tempDir=$(mktemp -d)
+    deleteTempDir="yes"
+  fi
+
+  echo "### Verification"
+  echo -n "$repartitionPlanJson" > "$tempDir/repartiton-verify-plan.json"
   kafka-reassign-partitions.sh \
     --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
-    --reassignment-json-file "$tempDir/repartiton-proposed.json" \
+    --reassignment-json-file "$tempDir/repartiton-verify-plan.json" \
     --verify
 
-  rm -fr $tempDir
+  if [ "yes" == "$deleteTempDir" ]
+  then
+    rm -fr "$tempDir"
+  fi
 }
 
 wait_for_service_up(){
