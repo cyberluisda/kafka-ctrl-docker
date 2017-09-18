@@ -85,6 +85,18 @@ kafka-ctl COMMAND [options]
       --format-plan. If present and plan must be applied json data will formatted
         with "jd" command.
 
+  repartition-with-plan: reallocate partitions based on json with plan.
+    This option can be used to implement a plan showed when lauch repartition with
+    --dru-run option.
+
+    In same way, this option cabe used  to roll-back previous repartition too
+    based on information showed from repartition command or for output of
+    previous execution of this command.
+
+    opitions: JSON_WITH_PLAN
+    JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
+      format
+
   verify-repartition : Verify a repartition plan previously executed.
     options: JSON_WITH_PLAN
       JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
