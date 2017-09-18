@@ -93,7 +93,7 @@ kafka-ctl COMMAND [options]
     based on information showed from repartition command or for output of
     previous execution of this command.
 
-    opitions: JSON_WITH_PLAN
+    options: JSON_WITH_PLAN
     JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
       format
 
