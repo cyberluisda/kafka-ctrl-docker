@@ -85,6 +85,18 @@ kafka-ctl COMMAND [options]
       --format-plan. If present and plan must be applied json data will formatted
         with "jd" command.
 
+  repartition-with-plan: reallocate partitions based on json with plan.
+    This option can be used to implement a plan showed when lauch repartition with
+    --dru-run option.
+
+    In same way, this option cabe used  to roll-back previous repartition too
+    based on information showed from repartition command or for output of
+    previous execution of this command.
+
+    opitions: JSON_WITH_PLAN
+    JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
+      format
+
   verify-repartition : Verify a repartition plan previously executed.
     options: JSON_WITH_PLAN
       JSON_WITH_PLAN : Plan launched (one output of repartition command) in json
@@ -424,9 +436,6 @@ Proposed partition reassignment configuration
     exit 1
   fi
 
-  echo "$repartictionCurrentJson" > repartiton-current.json
-  echo "$repartictionProposedJson" > repartiton-proposed.json
-
   echo "$repartictionCurrentJson" | jq -S . - > repartiton-current-format.json
   echo "$repartictionProposedJson" | jq -S . - > repartiton-proposed-format.json
 
@@ -441,40 +450,37 @@ Proposed partition reassignment configuration
   then
     cat repartiton-current-format.json
   else
-    cat repartiton-current.json
+    echo "$repartictionCurrentJson"
   fi
   echo ">>To"
   if [ "yes" == "$formatPlan" ]
   then
     cat repartiton-proposed-format.json
   else
-    cat repartiton-proposed.json
+    echo "$repartictionProposedJson"
   fi
 
   if [ "yes" == "$dryRun" ]
   then
     echo "### Dry run mode. End"
+    echo "Use next data (json between \"-----\") to execute this plan with repartition-with-plan command"
+    echo "-----"
+    echo "$repartictionProposedJson"
+    echo "-----"
+    echo "Rollback execution data (json between \"-----\"), only if will be applied"
+    echo "-----"
+    echo "$repartictionCurrentJson"
+    echo "-----"
     exit 0
   fi
 
-  # Executing plan
-  echo "### Executing plan"
-  kafka-reassign-partitions.sh \
-    --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
-    --reassignment-json-file repartiton-proposed.json \
-    --execute \
+  repartition_with_plan "$repartictionProposedJson" "$tempDir"
 
   # Verify
   if [ "yes" == "$verify" ]
   then
-    echo "### Verification"
-    verify_repartition "$(cat repartiton-proposed.json)"
+    verify_repartition "$repartictionProposedJson" "$tempDir"
   fi
-
-  echo "Use next data (json between \"-----\") to verify current realocation. See verify-realoc command"
-  echo "-----"
-  cat repartiton-proposed.json
-  echo "-----"
 
   cd - > /dev/null
   rm -fr "$tempDir"
@@ -506,6 +512,73 @@ generate_topics_json(){
   echo ']}'
 }
 
+# $1 json string with plan
+# $2 (Optional) temporal path used to save files. If not defined temporal path
+# will be created and removed when finished. If it is provided, path will not be
+# erased at end.
+repartition_with_plan(){
+  if [ -z "$1" ]
+  then
+    echo "ERROR: repartition-with-plan without JSON data"
+    usage
+    exit 1
+  fi
+
+  local tempDir="$2"
+  local deleteTempDir="no"
+  if [ -z "$tempDir" ]
+  then
+    tempDir=$(mktemp -d)
+    deleteTempDir="yes"
+  fi
+
+  echo "$1" > "$tempDir/repartiton-plan.json"
+  # Executing plan
+  echo "### Executing plan"
+  kafka-reassign-partitions.sh \
+    --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+    --reassignment-json-file "$tempDir/repartiton-plan.json" \
+    --execute \
+    > $tempDir/repartition-with-plan.stdout
+
+  if [ "$(cat $tempDir/repartition-with-plan.stdout | wc -l)" -ne "6" ]
+  then
+    echo "ERROR: Number of output lines of repartition command are not the expected:"
+    echo "=============================================="
+    cat $tempDir/repartition-with-plan.stdout
+    echo "=============================================="
+    exit 1
+  fi
+  local repartictionRollbackJson="$(cat $tempDir/repartition-with-plan.stdout | egrep -e "Current partition replica assignment" -A2 | tail -1)"
+
+  if [ -z "$repartictionRollbackJson" ]
+  then
+    echo "ERROR: when parse repartition command output:"
+    echo "=============================================="
+    cat $tempDir/repartition-with-plan.stdout
+    echo "=============================================="
+    exit 1
+  fi
+
+  echo "Use next data (json between \"-----\") to verify current realocation. See verify-repartition command"
+  echo "-----"
+  cat "$tempDir/repartiton-plan.json"
+  echo "-----"
+  echo "Or use next data (json between \"-----\") to ROLL-BACK current partition allocation"
+  echo "-----"
+  echo "$repartictionRollbackJson"
+  echo "-----"
+
+  if [ "yes" == "$deleteTempDir" ]
+  then
+    rm -fr "$tempDir"
+  fi
+}
+
+# $1 json string with plan
+# $2 (Optional) temporal path used to save files. If not defined temporal path
+# will be created and removed when finished. If it is provided, path will not be
+# erased at end.
 verify_repartition(){
 
   local repartitionPlanJson="$1"
@@ -516,14 +589,25 @@ verify_repartition(){
     exit 1
   fi
 
-  tempDir="$(mktemp -d)"
-  echo -n "$repartitionPlanJson" > "$tempDir/repartiton-proposed.json"
+  local tempDir="$2"
+  local deleteTempDir="no"
+  if [ -z "$tempDir" ]
+  then
+    tempDir=$(mktemp -d)
+    deleteTempDir="yes"
+  fi
+
+  echo "### Verification"
+  echo -n "$repartitionPlanJson" > "$tempDir/repartiton-verify-plan.json"
   kafka-reassign-partitions.sh \
     --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
-    --reassignment-json-file "$tempDir/repartiton-proposed.json" \
+    --reassignment-json-file "$tempDir/repartiton-verify-plan.json" \
     --verify
 
-  rm -fr $tempDir
+  if [ "yes" == "$deleteTempDir" ]
+  then
+    rm -fr "$tempDir"
+  fi
 }
 
 wait_for_service_up(){
@@ -575,6 +659,10 @@ case $1 in
   repartition)
     shift
     repartition $@
+    ;;
+  repartition-with-plan)
+    shift
+    repartition_with_plan $@
     ;;
   verify-repartition)
     shift
