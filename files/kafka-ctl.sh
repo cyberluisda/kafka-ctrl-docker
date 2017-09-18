@@ -71,7 +71,13 @@ kafka-ctl COMMAND [options]
       --property PROPx=VALUEx : set property PROPx with value VALUEx in producer
 
   repartition : reallocate partitions into diferents nodes for a topic
-    options : --all-topics|(NAME0 NAME1 ... NAMEn [--]) [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn] [--dry-run] [--format-plan]
+    options :
+        --all-topics|(NAME0 NAME1 ... NAMEn [--])
+        [--dest-broker-list|-b BROKER_ID1,BROKER_ID2, ... ,BROKER_IDn]
+        [--dry-run]
+        [--format-plan]
+        [--verify [--wait-finished TIMEOUT]]
+
       --all-topics: Look-up and apply to all topics in cluster. BE CAREFULLY
       NAMEx : name of the topic to reallocate partitions
       -- Mandatory if any of the next options is defined when topis are defined by name
@@ -82,6 +88,8 @@ kafka-ctl COMMAND [options]
       --dry-run. If present only information about planning is showed. Any action is
         persisted.
       --verify. If present verify procedure will be launched.
+      --wait-finished. If it is present (with --verify) wait for all partitios
+        will be reallocated or TIMEOUT (in secs) is reached.
       --format-plan. If present and plan must be applied json data will formatted
         with "jd" command.
 
@@ -350,6 +358,7 @@ repartition(){
   local dryRun="no"
   local verify="no"
   local formatPlan="no"
+  local waitFinishedTimeout=""
   while [ -n "$1" ]
   do
     case "$1" in
@@ -370,6 +379,16 @@ repartition(){
       --verify)
         verify="yes"
         shift 1
+        ;;
+      --wait-finished)
+        if [ -z "$2" ]
+        then
+          echo "repartition with --wait-finished option without value"
+          usage
+          exit 1
+        fi
+        waitFinishedTimeout="$2"
+        shift 2
         ;;
       --format-plan)
         formatPlan="yes"
@@ -479,7 +498,7 @@ Proposed partition reassignment configuration
   # Verify
   if [ "yes" == "$verify" ]
   then
-    verify_repartition "$repartictionProposedJson" "$tempDir"
+    verify_repartition "$repartictionProposedJson" "$tempDir" "$waitFinishedTimeout"
   fi
 
   cd - > /dev/null
@@ -577,6 +596,8 @@ repartition_with_plan(){
 
 # $1 json string with plan
 # $2 (Optional) temporal path used to save files. If not defined temporal path
+# $3 (Optional, Int) if it is not empty wait for all partitions was realocated. Or
+#   timeout is triggered.
 # will be created and removed when finished. If it is provided, path will not be
 # erased at end.
 verify_repartition(){
@@ -584,7 +605,7 @@ verify_repartition(){
   local repartitionPlanJson="$1"
   if [ -z "$repartitionPlanJson" ]
   then
-    echo "ERROF: verify-repartition without plan"
+    echo "ERROR: verify-repartition without plan"
     usage
     exit 1
   fi
@@ -597,12 +618,46 @@ verify_repartition(){
     deleteTempDir="yes"
   fi
 
+  local timeout="$3"
+
   echo "### Verification"
   echo -n "$repartitionPlanJson" > "$tempDir/repartiton-verify-plan.json"
   kafka-reassign-partitions.sh \
     --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
     --reassignment-json-file "$tempDir/repartiton-verify-plan.json" \
-    --verify
+    --verify \
+  > "$tempDir/verification.stdout"
+
+  if [ -n "$timeout" ]
+  then
+    echo "### Waiting for repartition finished or timeout of $timeout secs"
+    iterations="$(( timeout / 5))"
+    while [ "$iterations" -gt "0" ]
+    do
+      local status="$(cat "$tempDir/verification.stdout" | egrep -oe "(still in progress)|completed" | sort | uniq -c)"
+      echo "-------"
+      echo "$status"
+      if echo "$status" | fgrep "still" > /dev/null
+      then
+        sleep 5
+        kafka-reassign-partitions.sh \
+          --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
+          --reassignment-json-file "$tempDir/repartiton-verify-plan.json" \
+          --verify \
+        > "$tempDir/verification.stdout"
+        iterations=$((iterations - 1))
+      else
+        # No more partitions pending
+        echo "INFO: All partitons reallocated"
+        break
+      fi
+    done
+
+    if [ "$iterations" -eq 0 ]
+    then
+      echo "WARN: Timeout reached when wait for realocation finished"
+    fi
+  fi
 
   if [ "yes" == "$deleteTempDir" ]
   then
