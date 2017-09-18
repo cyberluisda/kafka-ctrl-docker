@@ -539,7 +539,7 @@ repartition_with_plan(){
     --zookeeper "${ZOOKEEPER_ENTRY_POINT}" \
     --reassignment-json-file "$tempDir/repartiton-plan.json" \
     --execute \
-    > $tempDir/repartition-with-plan.stdout
+    | tee $tempDir/repartition-with-plan.stdout
 
   if [ "$(cat $tempDir/repartition-with-plan.stdout | wc -l)" -ne "6" ]
   then
