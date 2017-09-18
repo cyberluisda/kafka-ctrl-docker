@@ -424,9 +424,6 @@ Proposed partition reassignment configuration
     exit 1
   fi
 
-  echo "$repartictionCurrentJson" > repartiton-current.json
-  echo "$repartictionProposedJson" > repartiton-proposed.json
-
   echo "$repartictionCurrentJson" | jq -S . - > repartiton-current-format.json
   echo "$repartictionProposedJson" | jq -S . - > repartiton-proposed-format.json
 
@@ -441,19 +438,27 @@ Proposed partition reassignment configuration
   then
     cat repartiton-current-format.json
   else
-    cat repartiton-current.json
+    echo "$repartictionCurrentJson"
   fi
   echo ">>To"
   if [ "yes" == "$formatPlan" ]
   then
     cat repartiton-proposed-format.json
   else
-    cat repartiton-proposed.json
+    echo "$repartictionProposedJson"
   fi
 
   if [ "yes" == "$dryRun" ]
   then
     echo "### Dry run mode. End"
+    echo "Use next data (json between \"-----\") to execute this plan with repartition-with-plan command"
+    echo "-----"
+    echo "$repartictionProposedJson"
+    echo "-----"
+    echo "Rollback execution data (json between \"-----\"), only if will be applied"
+    echo "-----"
+    echo "$repartictionCurrentJson"
+    echo "-----"
     exit 0
   fi
 
