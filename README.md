@@ -39,6 +39,18 @@ docker-compose run --rm kafka-ctl produce testtopic
 
 Data to push in topic is reading from `stdin`
 
+## Create topic but command never ends (keep-alive)
+
+This can be useful when you call create-topics for example in a docker-compose
+with other services that require topics are created. Obviously you will need
+`healthcheck` options in docker-compose and use `depends_on: service_healthy`
+option.
+
+````
+cd docker-compose
+docker-compose run -e KEEP_ALIVE_SLEEP_TIME=60 --rm kafka-ctl create-topic testtopic
+```
+
 ## Cleaning procedure ##
 
 **TODO**
