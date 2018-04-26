@@ -134,6 +134,14 @@ kafka-ctl COMMAND [options]
       WAIT_FOR_SERVICE_UP_TIMEOUT. Set timeot when check services listed on
         WAIT_FOR_SERVICE_UP. Default value 10s
 
+      KEEP_ALIVE_SLEEP_TIME. If defined and value is an integer greather than 0,
+        command do not exit and enter in a "sleep-loop" which each sleep command
+        has this value as argument.
+
+        Usefull if you are using this command in orchestrated (like
+        docker-compose) docker container and need other dockers wait for one
+        functionallity (like create-topics).
+
 EOF
 
 }
@@ -677,6 +685,21 @@ wait_for_service_up(){
     fi
 }
 
+keep_alive() {
+    if [ -n "$KEEP_ALIVE_SLEEP_TIME" ]; then
+      if [ "$KEEP_ALIVE_SLEEP_TIME" -gt 0 ];
+      then
+        echo "Entering in a KEEP-ALIVE mode sleep $KEEP_ALIVE_SLEEP_TIME secs between iterations"
+        while true;
+        do
+          sleep $KEEP_ALIVE_SLEEP_TIME
+        done
+      else
+        echo "WARNING KEEP_ALIVE_SLEEP_TIME value '$KEEP_ALIVE_SLEEP_TIME' is defined but is not greather than 0. Keep alive option deactivated"
+      fi
+    fi
+}
+
 wait_for_service_up
 
 case $1 in
@@ -728,3 +751,5 @@ case $1 in
     exit 1
     ;;
 esac
+
+keep_alive
