@@ -1,0 +1,30 @@
+# Multibroker version based on https://github.com/wurstmeister/kafka-docker/blob/master/docker-compose.yml
+---
+version: '2.2'
+services:
+  kafka-ctl:
+    build: ..
+    environment:
+      WAIT_FOR_SERVICE_UP: "tcp://kafka:9092 tcp://zookeeper:2181"
+    depends_on:
+      kafka:
+        condition: service_started
+  kafka:
+    image: openshine/kafka:0.11.0.0
+    scale: 3
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_PORT: 9092
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+
+    depends_on:
+      zookeeper:
+        condition: service_started
+    healthcheck:
+      test: "netstat -plnt | fgrep ':9092'"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  zookeeper:
+    image: wurstmeister/zookeeper
