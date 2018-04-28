@@ -46,7 +46,7 @@ with other services that require topics are created. Obviously you will need
 `healthcheck` options in docker-compose and use `depends_on: service_healthy`
 option.
 
-````
+```
 cd docker-compose
 docker-compose run -e KEEP_ALIVE_SLEEP_TIME=60 --rm kafka-ctl create-topic testtopic
 ```
@@ -54,3 +54,12 @@ docker-compose run -e KEEP_ALIVE_SLEEP_TIME=60 --rm kafka-ctl create-topic testt
 ## Cleaning procedure ##
 
 **TODO**
+
+# Multi kafka broker
+
+In same way there is `doker-compose` file in project:
+[docker-compose-multibroker.yml](./docker-compose/docker-compose-multibroker.yml)
+with 3 Kafka brokers configured.
+
+This can be usefully, for example, when you need to run `create-topic` command
+but select in which brokers you need to create.

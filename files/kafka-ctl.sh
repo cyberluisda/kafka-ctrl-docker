@@ -30,7 +30,7 @@ kafka-ctl COMMAND [options]
     options : NAME0 ... NAMEn
       NAMEx : the name of topic
   create-topic : create one or more topics
-    options : [--min-num-brokers-up NUM_BROKERS] [-s|-ns] [-r REPLICATION_FACTOR0 ] [-p PARTITIONS0] [-nc] [-c CONFIG0_1 ... -c CONFIG0_n] NAME0 ... [-s] [-r REPLICATION_FACTORn ] [-p PARTITIONSn] [-nc] [-c CONFIGn_1 ... -c CONFIGn_n] NAMEn
+    options : [--min-num-brokers-up NUM_BROKERS] [-s|-ns] [-r REPLICATION_FACTOR0 ] [-p PARTITIONS0] [-b BROKER_IDS0] [-nb] [-bs] [-nbs] [-nc] [-c CONFIG0_1 ... -c CONFIG0_n] NAME0 ... [-s] [-r REPLICATION_FACTORn ] [-p PARTITIONSn] [-b BROKER_IDSn] [-nb] [-bs] [-nbs] [-nc] [-c CONFIGn_1 ... -c CONFIGn_n] NAMEn
       --min-num-brokers-up. If present create topics will be launched only if
         number of kafka brokers is greather or equal that NUM_BROKERS.
         See list-brokers -n for more information
@@ -38,6 +38,18 @@ kafka-ctl COMMAND [options]
       -s : If active (present) only create topic if not exists (-ns inverse)
       REPLICATION_FACTORx : replication factor used. Default 1
       PARTITIONSx : number of partitions. Default 1
+      BROKER_IDSx : Select this borkers ids to create topic only (CSV format
+        1001,1002,1007). All main partitions and replicas will be assigned to
+        kafka servers which broker id is in this lits in circular order.
+        Note that this options is passed to next topic description, if you set
+        for first topic and you want deactivate in next topics, you must set -nb
+        option. For example
+          create-topic -p 15 -b 0,1 topic1 -r 2 -nb topic2
+
+      -bs | -nbs. Flag (-bs activeted -nbs deactivated) that force to check each broker is up in the cluster at execution moment.
+        By default is deactivate.
+        
+      -nb Clean previous -b option.
 
       -c Override default configuration values for all topics (See kafka-config.sh for more information).
          Values are set for current topic and next. If you need reset overrided configuration values use -nc
@@ -54,7 +66,7 @@ kafka-ctl COMMAND [options]
 
       -nc Remove all CONIFx_x defined to this time
 
-      -s option, REPLICATION_FACTOR and PARTITIONS are remembered if you set they apply to next topics until you set it
+      REPLICATION_FACTOR and PARTITIONS are remembered if you set they apply to next topics until you set it
       Example create-topic -s -r 1 -p 2 topic1 topic2 is the same like
       create-topic -s -r 1 -p 2 topic1 -s -r 1 -p 2 topic2
   consume : consume and show data from a topic
@@ -245,6 +257,8 @@ create_topics() {
   local partitions=1
   local name=""
   local configs=""
+  local only_in_brokers=""
+  local safe_brokers="no"
   while [ -n "$1" ]
   do
     case $1 in
@@ -256,12 +270,24 @@ create_topics() {
         shift 1
         partitions=$1
         ;;
+      -b)
+        shift 1
+        only_in_brokers="$1"
+        ;;
+      -bs)
+        safe_brokers="yes"
+        ;;
+      -nbs)
+        safe_brokers="no"
+        ;;
+      -nb)
+        only_in_brokers=""
+        ;;
       -c)
         shift 1
         configs="$configs --config $1"
         ;;
       -nc)
-        shift 1
         configs=""
         ;;
       -s)
@@ -272,16 +298,11 @@ create_topics() {
         ;;
       *)
         name="$1"
-        if [ "$safe" == "yes" ]
+        if [ -z "$only_in_brokers" ]
         then
-          if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
-          then
-            echo "Topic $name exists. Ignoring"
-          else
-            kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
-          fi
+          _create_topic_all_brokers "$safe" "$name" "$partitions" "$repl_fct" "$configs"
         else
-          kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+          _create_topic_brokers_assigned "$safe" "$name" "$only_in_brokers" "$safe_brokers" "$partitions" "$repl_fct" "$configs"
         fi
         ;;
     esac
@@ -289,6 +310,154 @@ create_topics() {
   done
 }
 
+# Help function to simplify create_topic generic
+##
+# $1 safe mode?. Yes or no
+# $2 topic name
+# $3 partitions
+# $4 replication factor
+# $5 configs. Expected format is all in one string. Example '--config a=b --config c=j'
+_create_topic_all_brokers(){
+  local safe="$1"
+  local name="$2"
+  local partitions="$3"
+  local repl_fct="$4"
+  local configs="$5"
+  if [ "$safe" == "yes" ]
+  then
+    if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
+    then
+      echo "Topic $name exists. Ignoring"
+    else
+      kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+    fi
+  else
+    kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+  fi
+}
+
+# Help function to simplify create_topic when kafka brokers are restricted
+##
+# $1 safe mode?. Yes or no
+# $2 topic name
+# $3 broker list
+# $4 safe broker list?. If yes check that brokers assigned exist now.
+# $5 partitions
+# $6 replication factor
+# $7 configs. Expected format is all in one string. Example '--config a=b --config c=j'
+_create_topic_brokers_assigned(){
+
+  local safe=$1
+  local name="$2"
+  local brokers="$3"
+  local safe_brokers="$4"
+  local partitions="$5"
+  local repl_fct="$6"
+  local configs="$7"
+
+  if [ $(_length_csv $brokers) -lt $repl_fct ]
+  then
+    echo "ERROR number of replicas $repl_fct must be less or equal than number of brokers $(length_csv $brokers). Topic $name will not be created"
+  else
+    # available broker list
+    local available_broker_list=""
+    if [ "$safe_brokers" == "yes" ]
+    then
+      available_broker_list=$(list_brokers)
+    fi
+    # Resolve replica assignement
+    local partitions_assigned=""
+    for ((i=0;i<$partitions;i++))
+    do
+      local new_broker="$(_circular_csv $brokers $i)"
+      # Check for available broker
+      if [ "$safe_brokers" == "yes" ]
+      then
+        if echo "$available_broker_list" | egrep -Ee "(\\[|[, ])${new_broker}(\\]|[ ,])" 2>&1 >/dev/null
+        then
+          echo -n
+        else
+          echo "WARNING broker $new_broker is not available now (when assing primary partition), topic $name will not be created"
+          return
+        fi
+      fi
+
+      # First iteration => no separator
+      if [ $i == 0 ]
+      then
+        partitions_assigned="$new_broker"
+      else
+        partitions_assigned="$partitions_assigned,$new_broker"
+      fi
+
+      # Replicas
+      for ((j=1;j<$repl_fct;j++))
+      do
+        local new_replica_broker="$(_circular_csv $brokers $((i+j)))"
+        # Check for available broker
+        if [ "$safe_brokers" == "yes" ]
+        then
+          if echo "$available_broker_list" | egrep -Ee "(\\[|[, ])${new_replica_broker}(\\]|[ ,])" 2>&1 >/dev/null
+          then
+            echo -n
+          else
+            echo "WARNING broker $new_replica_broker is not available now (when assing partition replica), topic $name will not be created"
+            return
+          fi
+        fi
+        partitions_assigned="$partitions_assigned:$new_replica_broker"
+      done
+    done
+
+    if [ "$safe" == "yes" ]
+    then
+      if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
+      then
+        echo "Topic $name exists. Ignoring"
+      else
+        kafka-topics.sh --create --topic "$name" --replica-assignment "$partitions_assigned" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+      fi
+    else
+      kafka-topics.sh --create --topic "$name" --replica-assignment "$partitions_assigned" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+    fi
+  fi
+}
+
+# Return element like a circular array from CSV string.
+# Based on resolve module of index
+##
+# $1 string that will be split into array
+# $2 offset
+# $3 Optional separator to split array by default ','
+_circular_csv() {
+  local separator=","
+  if [ -n "$3" ]
+  then
+    separator="$3"
+  fi
+  IFS="$separator" read -r -a target <<< "$1"
+  local length=${#target[*]}
+  local offset=$2
+  local idx=$((offset % length))
+
+  # Return item
+  echo -n ${target[idx]}
+}
+
+# Return number of items from CSV string.
+##
+# $1 string that will be split into array
+# $2 Optional separator to split array by default ','
+_length_csv(){
+  local separator=","
+  if [ -n "$2" ]
+  then
+    separator="$2"
+  fi
+  IFS="$separator" read -r -a target <<< "$1"
+
+  echo -n ${#target[@]}
+}
 consume() {
   local from_beginning="--from-beginning"
   local name="$1"
