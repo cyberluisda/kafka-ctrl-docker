@@ -30,7 +30,7 @@ kafka-ctl COMMAND [options]
     options : NAME0 ... NAMEn
       NAMEx : the name of topic
   create-topic : create one or more topics
-    options : [--min-num-brokers-up NUM_BROKERS] [-s|-ns] [-r REPLICATION_FACTOR0 ] [-p PARTITIONS0] [-nc] [-c CONFIG0_1 ... -c CONFIG0_n] NAME0 ... [-s] [-r REPLICATION_FACTORn ] [-p PARTITIONSn] [-nc] [-c CONFIGn_1 ... -c CONFIGn_n] NAMEn
+    options : [--min-num-brokers-up NUM_BROKERS] [-s|-ns] [-r REPLICATION_FACTOR0 ] [-p PARTITIONS0] [-b BROKER_IDS0] [-nb] [-bs] [-nbs] [-nc] [-c CONFIG0_1 ... -c CONFIG0_n] NAME0 ... [-s] [-r REPLICATION_FACTORn ] [-p PARTITIONSn] [-b BROKER_IDSn] [-nb] [-bs] [-nbs] [-nc] [-c CONFIGn_1 ... -c CONFIGn_n] NAMEn
       --min-num-brokers-up. If present create topics will be launched only if
         number of kafka brokers is greather or equal that NUM_BROKERS.
         See list-brokers -n for more information
@@ -38,6 +38,18 @@ kafka-ctl COMMAND [options]
       -s : If active (present) only create topic if not exists (-ns inverse)
       REPLICATION_FACTORx : replication factor used. Default 1
       PARTITIONSx : number of partitions. Default 1
+      BROKER_IDSx : Select this borkers ids to create topic only (CSV format
+        1001,1002,1007). All main partitions and replicas will be assigned to
+        kafka servers which broker id is in this lits in circular order.
+        Note that this options is passed to next topic description, if you set
+        for first topic and you want deactivate in next topics, you must set -nb
+        option. For example
+          create-topic -p 15 -b 0,1 topic1 -r 2 -nb topic2
+
+      -bs | -nbs. Flag (-bs activeted -nbs deactivated) that force to check each broker is up in the cluster at execution moment.
+        By default is deactivate.
+        
+      -nb Clean previous -b option.
 
       -c Override default configuration values for all topics (See kafka-config.sh for more information).
          Values are set for current topic and next. If you need reset overrided configuration values use -nc
@@ -54,7 +66,7 @@ kafka-ctl COMMAND [options]
 
       -nc Remove all CONIFx_x defined to this time
 
-      -s option, REPLICATION_FACTOR and PARTITIONS are remembered if you set they apply to next topics until you set it
+      REPLICATION_FACTOR and PARTITIONS are remembered if you set they apply to next topics until you set it
       Example create-topic -s -r 1 -p 2 topic1 topic2 is the same like
       create-topic -s -r 1 -p 2 topic1 -s -r 1 -p 2 topic2
   consume : consume and show data from a topic
