@@ -245,6 +245,8 @@ create_topics() {
   local partitions=1
   local name=""
   local configs=""
+  local only_in_brokers=""
+  local safe_brokers="no"
   while [ -n "$1" ]
   do
     case $1 in
@@ -256,12 +258,24 @@ create_topics() {
         shift 1
         partitions=$1
         ;;
+      -b)
+        shift 1
+        only_in_brokers="$1"
+        ;;
+      -bs)
+        safe_brokers="yes"
+        ;;
+      -nbs)
+        safe_brokers="no"
+        ;;
+      -nb)
+        only_in_brokers=""
+        ;;
       -c)
         shift 1
         configs="$configs --config $1"
         ;;
       -nc)
-        shift 1
         configs=""
         ;;
       -s)
@@ -272,9 +286,17 @@ create_topics() {
         ;;
       *)
         name="$1"
-        if [ "$safe" == "yes" ]
+        if [ -z "$only_in_brokers" ]
         then
-          if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
+          _create_topic_all_brokers "$safe" "$name" "$partitions" "$repl_fct" "$configs"
+        else
+          _create_topic_brokers_assigned "$safe" "$name" "$only_in_brokers" "$safe_brokers" "$partitions" "$repl_fct" "$configs"
+        fi
+        ;;
+    esac
+    shift
+  done
+}
 
 # Help function to simplify create_topic generic
 ##
@@ -302,11 +324,6 @@ _create_topic_all_brokers(){
   fi
 }
 
-          then
-            echo "Topic $name exists. Ignoring"
-          else
-            kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
-          fi
 # Help function to simplify create_topic when kafka brokers are restricted
 ##
 # $1 safe mode?. Yes or no
