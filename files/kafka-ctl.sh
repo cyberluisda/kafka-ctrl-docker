@@ -289,6 +289,20 @@ create_topics() {
   done
 }
 
+# Return number of items from CSV string.
+##
+# $1 string that will be split into array
+# $2 Optional separator to split array by default ','
+_length_csv(){
+  local separator=","
+  if [ -n "$2" ]
+  then
+    separator="$2"
+  fi
+  IFS="$separator" read -r -a target <<< "$1"
+
+  echo -n ${#target[@]}
+}
 consume() {
   local from_beginning="--from-beginning"
   local name="$1"
