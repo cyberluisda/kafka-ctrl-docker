@@ -275,6 +275,33 @@ create_topics() {
         if [ "$safe" == "yes" ]
         then
           if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
+
+# Help function to simplify create_topic generic
+##
+# $1 safe mode?. Yes or no
+# $2 topic name
+# $3 partitions
+# $4 replication factor
+# $5 configs. Expected format is all in one string. Example '--config a=b --config c=j'
+_create_topic_all_brokers(){
+  local safe="$1"
+  local name="$2"
+  local partitions="$3"
+  local repl_fct="$4"
+  local configs="$5"
+  if [ "$safe" == "yes" ]
+  then
+    if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
+    then
+      echo "Topic $name exists. Ignoring"
+    else
+      kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+    fi
+  else
+    kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+  fi
+}
+
           then
             echo "Topic $name exists. Ignoring"
           else
