@@ -287,6 +287,26 @@ create_topics() {
     esac
     shift
   done
+
+# Return element like a circular array from CSV string.
+# Based on resolve module of index
+##
+# $1 string that will be split into array
+# $2 offset
+# $3 Optional separator to split array by default ','
+_circular_csv() {
+  local separator=","
+  if [ -n "$3" ]
+  then
+    separator="$3"
+  fi
+  IFS="$separator" read -r -a target <<< "$1"
+  local length=${#target[*]}
+  local offset=$2
+  local idx=$((offset % length))
+
+  # Return item
+  echo -n ${target[idx]}
 }
 
 # Return number of items from CSV string.
