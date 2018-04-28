@@ -307,13 +307,92 @@ _create_topic_all_brokers(){
           else
             kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
           fi
+# Help function to simplify create_topic when kafka brokers are restricted
+##
+# $1 safe mode?. Yes or no
+# $2 topic name
+# $3 broker list
+# $4 safe broker list?. If yes check that brokers assigned exist now.
+# $5 partitions
+# $6 replication factor
+# $7 configs. Expected format is all in one string. Example '--config a=b --config c=j'
+_create_topic_brokers_assigned(){
+
+  local safe=$1
+  local name="$2"
+  local brokers="$3"
+  local safe_brokers="$4"
+  local partitions="$5"
+  local repl_fct="$6"
+  local configs="$7"
+
+  if [ $(_length_csv $brokers) -lt $repl_fct ]
+  then
+    echo "ERROR number of replicas $repl_fct must be less or equal than number of brokers $(length_csv $brokers). Topic $name will not be created"
+  else
+    # available broker list
+    local available_broker_list=""
+    if [ "$safe_brokers" == "yes" ]
+    then
+      available_broker_list=$(list_brokers)
+    fi
+    # Resolve replica assignement
+    local partitions_assigned=""
+    for ((i=0;i<$partitions;i++))
+    do
+      local new_broker="$(_circular_csv $brokers $i)"
+      # Check for available broker
+      if [ "$safe_brokers" == "yes" ]
+      then
+        if echo "$available_broker_list" | egrep -Ee "(\\[|[, ])${new_broker}(\\]|[ ,])" 2>&1 >/dev/null
+        then
+          echo -n
         else
-          kafka-topics.sh --create --topic "$name" --replication-factor "$repl_fct" --partitions "${partitions}" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+          echo "WARNING broker $new_broker is not available now (when assing primary partition), topic $name will not be created"
+          return
         fi
-        ;;
-    esac
-    shift
-  done
+      fi
+
+      # First iteration => no separator
+      if [ $i == 0 ]
+      then
+        partitions_assigned="$new_broker"
+      else
+        partitions_assigned="$partitions_assigned,$new_broker"
+      fi
+
+      # Replicas
+      for ((j=1;j<$repl_fct;j++))
+      do
+        local new_replica_broker="$(_circular_csv $brokers $((i+j)))"
+        # Check for available broker
+        if [ "$safe_brokers" == "yes" ]
+        then
+          if echo "$available_broker_list" | egrep -Ee "(\\[|[, ])${new_replica_broker}(\\]|[ ,])" 2>&1 >/dev/null
+          then
+            echo -n
+          else
+            echo "WARNING broker $new_replica_broker is not available now (when assing partition replica), topic $name will not be created"
+            return
+          fi
+        fi
+        partitions_assigned="$partitions_assigned:$new_replica_broker"
+      done
+    done
+
+    if [ "$safe" == "yes" ]
+    then
+      if kafka-topics.sh --describe --topic "$name" --zookeeper "${ZOOKEEPER_ENTRY_POINT}" 2>&1 | fgrep "$name" > /dev/null
+      then
+        echo "Topic $name exists. Ignoring"
+      else
+        kafka-topics.sh --create --topic "$name" --replica-assignment "$partitions_assigned" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+      fi
+    else
+      kafka-topics.sh --create --topic "$name" --replica-assignment "$partitions_assigned" $configs --zookeeper "${ZOOKEEPER_ENTRY_POINT}"
+    fi
+  fi
+}
 
 # Return element like a circular array from CSV string.
 # Based on resolve module of index
